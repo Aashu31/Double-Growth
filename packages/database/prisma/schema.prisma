@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  WON
+  LOST
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  UPI
+  PAYPAL
+  MANUAL
+}
+
+model Lead {
+  id               String     @id @default(cuid())
+  name             String
+  email            String
+  phone            String
+  businessName     String?
+  service          String
+  budget           String?
+  description      String     @db.Text
+  preferredContact String?
+  consent          Boolean    @default(false)
+  source           String     @default("website")
+  status           LeadStatus @default(NEW)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@index([status, createdAt])
+  @@index([email])
+}
+
+model Order {
+  id                String          @id @default(cuid())
+  orderNumber       String          @unique
+  customerName      String
+  email             String
+  phone             String
+  businessName      String?
+  gstin             String?
+  packageId         String
+  amountMinor       Int
+  currency          String          @default("INR")
+  status            OrderStatus     @default(PENDING_PAYMENT)
+  provider          PaymentProvider?
+  providerReference String?
+  notes             String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  paidAt            DateTime?
+  events            PaymentEvent[]
+
+  @@index([email, createdAt])
+  @@index([status, createdAt])
+}
+
+model PaymentEvent {
+  id          String          @id @default(cuid())
+  orderId     String
+  provider    PaymentProvider
+  eventId     String
+  status      String
+  amountMinor Int?
+  payload     Json
+  createdAt   DateTime        @default(now())
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, eventId])
+  @@index([orderId, createdAt])
+}

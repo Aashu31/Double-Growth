@@ -1,0 +1,30 @@
+{
+  "name": "double-growth-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Double Growth official business website and platform monorepo.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,blue \"npm:dev:web\" \"npm:dev:api\"",
+    "dev:web": "npm run dev --workspace @double-growth/web",
+    "dev:api": "npm run dev --workspace @double-growth/api",
+    "build": "npm run build --workspace @double-growth/web && npm run build --workspace @double-growth/api",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspace @double-growth/web",
+    "test": "npm run test --workspaces --if-present",
+    "db:generate": "npm run generate --workspace @double-growth/database",
+    "db:migrate": "npm run migrate --workspace @double-growth/database",
+    "db:migrate:deploy": "npm run migrate:deploy --workspace @double-growth/database",
+    "db:studio": "npm run studio --workspace @double-growth/database"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "devDependencies": {
+    "concurrently": "10.0.7",
+    "typescript": "5.9.3"
+  }
+}
