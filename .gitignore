@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment files and secrets
+# Keep documented templates such as .env.example committed.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+.secrets/
+credentials.json
+
+# Next.js build output
+.next/
+out/
+.vercel/
+.turbo/
+
+# General build output
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Prisma generated client and local database artifacts
+packages/database/generated/
+prisma/dev.db
+prisma/dev.db-journal
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test artifacts
+playwright-report/
+test-results/
+blob-report/
+
+# Local uploads and temporary files
+uploads/
+tmp/
+temp/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor and IDE files
+.idea/
+*.swp
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
