@@ -46,12 +46,14 @@ The official business website and lead-generation platform for **Double Growth**
 
 ## 1. Overview
 
-Double Growth is a technology company that builds websites, e-commerce platforms and custom web applications for businesses in India and abroad. The company is operated by two co-founders and runs two planned business verticals:
+Double Growth is a technology company that builds websites, e-commerce platforms and custom web applications for businesses in India and abroad. The company is operated by two co-founders and combines a digital agency business with its own software platform:
 
-| Vertical | Description | Status |
+| Area | Description | Status |
 |---|---|---|
 | **Digital Agency** | Website development, e-commerce, custom web applications, redesign, deployment, maintenance, hosting management and technical support for client businesses. | Active business focus — the subject of this repository |
-| **CampusOS** | A planned School Management System covering admissions, students, staff, attendance, timetable, examinations, fees, homework, portals and mobile applications. | Future product — **not** part of this website's Version 1 |
+| **Sarthi (platform module)** | Sarthi is the School Management System (School ERP) module within the Double Growth platform. It is designed to manage schools, students, teachers, parents, academic activities, attendance, examinations, fees and school administration. | Platform module — **not** part of this website's Version 1 |
+
+Sarthi is an integrated module of the main Double Growth dashboard/platform, not a separate standalone product.
 
 This repository is intended to hold the Double Growth Official Business Website, **Version 1**: the public marketing site, the service catalogue, the portfolio, the pricing presentation, and the inquiry (lead capture) system that feeds the founders' sales pipeline.
 
@@ -106,13 +108,13 @@ Help businesses establish a credible, effective digital presence — and grow th
 
 ### Vision
 
-Operate as a digital solutions agency that funds and builds its own software products, with CampusOS as the first planned product.
+Operate as a digital solutions agency that funds and builds its own software platform, with Sarthi — its School Management System (School ERP) module — as the first planned capability.
 
 ### Structure
 
 Double Growth is founded and run by **two co-founders**. Both are expected to hold **separate administrative accounts** in every system the company operates. Shared credentials are prohibited. Founder names, roles and titles are **Pending Verification** for publication and are deliberately omitted from this public README.
 
-### Business verticals
+### Business areas
 
 **Digital Agency (current focus)**
 
@@ -127,11 +129,13 @@ Double Growth is founded and run by **two co-founders**. Both are expected to ho
 - Technical support
 - Custom integrations
 
-**CampusOS (future product)**
+**Sarthi (platform module)**
+
+Sarthi is the School Management System (School ERP) module within the Double Growth platform. It is designed to manage schools, students, teachers, parents, academic activities, attendance, examinations, fees and school administration.
 
 Planned capabilities: student management, admission management, teacher management, attendance, timetable, examination and results, fee management, homework, parent portal, student portal, teacher portal, and mobile applications.
 
-CampusOS is a **separate product**. It is referenced here only to explain company direction and the long-term roadmap. It must not appear on the public website as an available product, a launched platform, or a supported service.
+Sarthi is **not a separate standalone product** and has no independent repository. It is a module of the main Double Growth dashboard/platform, with its own role-based permissions, school-specific modules and strict multi-tenant data isolation so that each school's data remains separate. It is referenced here to explain company direction and the long-term roadmap, and is **not** part of the public website's Version 1. It must not appear on the public website as an available product, a launched platform, or a supported service.
 
 ---
 
@@ -284,7 +288,7 @@ Intended for the founders only:
 
 ### 6.6 Explicitly out of scope for V1
 
-- CampusOS, in any form, including teaser pages that imply availability.
+- Sarthi, in any form, including teaser pages that imply availability.
 - Multi-tenant client portals.
 - Public user accounts for website visitors.
 - Native mobile applications.
@@ -372,6 +376,18 @@ PostgreSQL
 6. Chatbot output is untrusted content. It must never be used to construct SQL, authorize actions, or bypass validation.
 7. Shared contracts (types and Zod schemas) live in a shared package so the web and API applications cannot drift.
 8. All secrets live in environment configuration, never in source control.
+
+### Sarthi module (planned)
+
+Sarthi is the School Management System (School ERP) **module of the Double Growth platform**, not a separate application or product. It will run within the platform rather than as an independent stack:
+
+- **Placement:** a module inside the main Double Growth dashboard/platform, in this repository rather than a separate repository.
+- **Permissions:** its own role-based access control, scoped to each school and user role.
+- **Modules:** school-specific modules covering admissions, students, teachers, parents, academic activities, attendance, examinations, fees and school administration.
+- **Data isolation:** strict multi-tenant isolation — every query is scoped to the authenticated school, and cross-tenant access is denied by default.
+- **API access:** through the same authorized backend endpoints as the rest of the platform, never directly from the client to the database.
+
+These are requirements, not implemented capabilities. Sarthi is outside the Version 1 website scope.
 
 ### Integration status
 
@@ -744,7 +760,7 @@ Every control above is unimplemented. A security review is required before any p
 | **M6** | AI chatbot and integrations: knowledge base, provider abstraction, lead capture, budget controls, escalation | Not started |
 | **M7** | Testing and security: coverage targets, integration tests, security review, accessibility audit | Not started |
 | **M8** | Production launch: deployment, monitoring, backups, runbooks, legal page review | Not started |
-| **Future** | CampusOS development as a separate product | Not started |
+| **Future** | Sarthi: School Management System (School ERP) development as an integrated module of the Double Growth platform, with role-based permissions, school-specific modules and strict multi-tenant data isolation | Not started |
 
 ### Milestone exit criteria
 
