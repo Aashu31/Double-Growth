@@ -5,6 +5,7 @@ import { PageHero } from "@/components/layout/page-hero";
 import { ContactForm } from "@/components/forms/contact-form";
 import { siteConfig } from "@/lib/site";
 import { pageMetadata } from "@/lib/site";
+import { SERVICE_IDS } from "@double-growth/shared";
 
 export const metadata: Metadata = pageMetadata({
   title: "Contact",
@@ -13,7 +14,20 @@ export const metadata: Metadata = pageMetadata({
   path: "/contact",
 });
 
-export default function ContactPage() {
+export default async function ContactPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ service?: string | string[] }>;
+}) {
+  const query = await searchParams;
+  const requested = Array.isArray(query.service)
+    ? query.service[0]
+    : query.service;
+  const defaultService =
+    requested && (SERVICE_IDS as readonly string[]).includes(requested)
+      ? requested
+      : undefined;
+
   return (
     <>
       <PageHero
@@ -34,7 +48,7 @@ export default function ContactPage() {
                 only to respond to this enquiry.
               </p>
               <div className="mt-7">
-                <ContactForm />
+                <ContactForm defaultService={defaultService} />
               </div>
             </div>
 

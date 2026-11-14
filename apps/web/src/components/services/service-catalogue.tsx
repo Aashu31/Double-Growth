@@ -48,7 +48,12 @@ export function ServiceCatalogue() {
 
       <div className="mt-8 grid gap-5 lg:grid-cols-2">
         {visible.map((service) => (
-          <ServiceCard key={service.id} service={service} detail />
+          <ServiceCard
+            key={service.id}
+            service={service}
+            index={servicesContent.findIndex((item) => item.id === service.id)}
+            detail
+          />
         ))}
       </div>
     </div>

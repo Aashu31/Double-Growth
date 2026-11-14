@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 import { ChatWidget } from "@/components/chat/chat-widget";
@@ -45,7 +46,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#081A33",
+  themeColor: "#0B1020",
 };
 
 export default function RootLayout({
@@ -71,7 +72,7 @@ export default function RootLayout({
   };
 
   return (
-    <html lang="en-IN" className={GeistSans.variable}>
+    <html lang="en-IN" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="min-h-screen font-sans">
         <noscript>
           {/* Content must remain readable without JavaScript. */}

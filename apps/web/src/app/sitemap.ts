@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { projects } from "@/content/portfolio";
+import { servicesContent } from "@/content/services";
 import { siteConfig } from "@/lib/site";
 
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -7,6 +8,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const routes = [
     { path: "/", priority: 1 },
     { path: "/services", priority: 0.9 },
+    ...servicesContent.map((service) => ({
+      path: `/services/${service.id}`,
+      priority: 0.7,
+    })),
+    { path: "/solutions", priority: 0.9 },
     { path: "/pricing", priority: 0.9 },
     { path: "/how-it-works", priority: 0.8 },
     { path: "/portfolio", priority: 0.7 },

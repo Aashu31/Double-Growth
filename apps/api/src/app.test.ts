@@ -111,7 +111,37 @@ function createFakeRepositories(overrides: Partial<Repositories> = {}) {
           orderNumber: order.orderNumber,
           status: order.status,
           duplicate: false,
+          email: order.email,
+          customerName: order.customerName,
+          amountMinor: order.amountMinor,
+          currency: order.currency,
         };
+      },
+    },
+    newsletter: {
+      async subscribe(email: string, source: string) {
+        void source;
+        return {
+          id: `subscriber_${email}`,
+          email,
+          createdAt: new Date(),
+          duplicate: false,
+        };
+      },
+    },
+    notifications: {
+      async create() {
+        // Notifications are telemetry; the fake records nothing.
+      },
+    },
+    chat: {
+      async saveExchange() {
+        // Chat logging is best-effort; the fake records nothing.
+      },
+    },
+    aiUsage: {
+      async consume({ requestLimit }) {
+        return { allowed: true, count: 1 > requestLimit ? 2 : 1 };
       },
     },
     ...overrides,
@@ -451,5 +481,184 @@ describe("API", () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json().error.code).toBe("NOT_FOUND");
+  });
+
+  it("serves the shared catalogue without a database", async () => {
+    app = await buildApp({ config: testConfig(), repositories: null });
+
+    const services = await app.inject({
+      method: "GET",
+      url: "/api/v1/services",
+    });
+    expect(services.statusCode).toBe(200);
+    expect(services.json().meta.count).toBe(8);
+
+    const single = await app.inject({
+      method: "GET",
+      url: "/api/v1/services/business-website",
+    });
+    expect(single.statusCode).toBe(200);
+    expect(single.json().data.category).toBe("Websites");
+
+    const missing = await app.inject({
+      method: "GET",
+      url: "/api/v1/services/nope",
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe("SERVICE_NOT_FOUND");
+
+    const solutions = await app.inject({
+      method: "GET",
+      url: "/api/v1/solutions",
+    });
+    expect(solutions.statusCode).toBe(200);
+    expect(solutions.json().meta.count).toBe(5);
+
+    const solution = await app.inject({
+      method: "GET",
+      url: "/api/v1/solutions/sell-online",
+    });
+    expect(solution.statusCode).toBe(200);
+    expect(solution.json().data.serviceIds).toContain("ecommerce");
+
+    const pricing = await app.inject({
+      method: "GET",
+      url: "/api/v1/pricing",
+    });
+    expect(pricing.statusCode).toBe(200);
+    expect(pricing.json().data.packages[0].priceMinor).toBe(399_900);
+  });
+
+  it("reports integration states honestly on the health endpoint", async () => {
+    app = await buildApp({ config: testConfig(), repositories: null });
+
+    const response = await app.inject({ method: "GET", url: "/health" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().integrations).toEqual({
+      database: "configured",
+      ai: "not_configured",
+      email: "not_configured",
+      payments: "not_configured",
+    });
+  });
+
+  it("refuses newsletter subscriptions without a database", async () => {
+    app = await buildApp({ config: testConfig(), repositories: null });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/newsletter",
+      payload: { email: "reader@example.com" },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("DATABASE_NOT_CONFIGURED");
+  });
+
+  it("accepts a newsletter subscription and rejects the honeypot", async () => {
+    const { repositories } = createFakeRepositories();
+    app = await buildApp({ config: testConfig(), repositories });
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/api/v1/newsletter",
+      payload: { email: "Reader@Example.com", source: "footer" },
+    });
+
+    expect(accepted.statusCode).toBe(201);
+    expect(accepted.json().data.subscribed).toBe(true);
+
+    const spam = await app.inject({
+      method: "POST",
+      url: "/api/v1/newsletter",
+      payload: { email: "bot@example.com", website: "https://spam.example" },
+    });
+
+    expect(spam.statusCode).toBe(400);
+    expect(spam.json().error.code).toBe("SPAM_REJECTED");
+  });
+
+  it("creates a payment target only for a payable order", async () => {
+    const { repositories, orders } = createFakeRepositories();
+    app = await buildApp({ config: testConfig(), repositories });
+
+    await app.inject({
+      method: "POST",
+      url: "/api/v1/orders",
+      payload: validOrder,
+    });
+
+    const pending = await app.inject({
+      method: "POST",
+      url: "/api/v1/payments/create",
+      payload: {
+        orderNumber: "DG-202611-000001",
+        email: "owner@example.com",
+      },
+    });
+
+    expect(pending.statusCode).toBe(200);
+    expect(pending.json().data.payment.enabled).toBe(false);
+    expect(pending.json().data.payment.message).toContain("not enabled");
+
+    const firstOrder = orders[0];
+    if (!firstOrder) throw new Error("expected an order");
+
+    firstOrder.status = "PAID";
+
+    const paid = await app.inject({
+      method: "POST",
+      url: "/api/v1/payments/create",
+      payload: {
+        orderNumber: "DG-202611-000001",
+        email: "owner@example.com",
+      },
+    });
+
+    expect(paid.statusCode).toBe(409);
+    expect(paid.json().error.code).toBe("ORDER_ALREADY_PAID");
+
+    const unknown = await app.inject({
+      method: "POST",
+      url: "/api/v1/payments/create",
+      payload: {
+        orderNumber: "DG-202611-999999",
+        email: "owner@example.com",
+      },
+    });
+
+    expect(unknown.statusCode).toBe(404);
+    expect(unknown.json().error.code).toBe("ORDER_NOT_FOUND");
+  });
+
+  it("stops chat when the monthly usage allowance is exhausted", async () => {
+    const { repositories } = createFakeRepositories({
+      aiUsage: {
+        async consume() {
+          return { allowed: false, count: 501 };
+        },
+      },
+    });
+
+    app = await buildApp({
+      config: testConfig({ AI_MONTHLY_REQUEST_LIMIT: "500" }),
+      repositories,
+      chat: {
+        configured: true,
+        async reply() {
+          return "This should not run.";
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat",
+      payload: { message: "What services do you offer?" },
+    });
+
+    expect(response.statusCode).toBe(429);
+    expect(response.json().error.code).toBe("AI_QUOTA_EXCEEDED");
   });
 });

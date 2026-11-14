@@ -12,20 +12,24 @@ V1 is two independently deployable applications plus a PostgreSQL database. Noth
 | API (`apps/api`) | Render, Fly.io, Railway or a Node VPS | Long-running Node process, health checks |
 | PostgreSQL | Neon, Supabase, RDS or managed Postgres | Requires TLS; use a pooled URL for the API if available |
 
+Container definitions for both applications are provided in `deploy/`. They are optional; the recommended path is still a managed Next.js host for the website and a Node host for the API.
+
 The API must not be hosted on a static-only platform. The website must not be hosted in a way that prevents Next.js from serving its build output.
 
 ---
 
 ## 2. Pre-deployment checklist
 
-1. `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` all pass locally.
+1. `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` and `npm run test:e2e` all pass locally.
 2. Production domain verified (`doublegrowth.in` and the API subdomain).
 3. Legal pages reviewed and the draft banner removed by a qualified professional.
 4. Contact details, founder identities and social profiles confirmed and added to `apps/web/src/lib/site.ts`.
 5. Portfolio/testimonials contain only approved, real content. The current three entries must stay labelled "Design concept" until they are replaced by delivered, client-approved work.
 6. Payment provider contracted (if online payment is launching).
 7. AI provider contracted (if the assistant should answer automatically).
-8. Database backup and restore procedure confirmed with the provider.
+8. Email provider and verified sender domain configured (if notifications should be delivered).
+9. Database backup and restore procedure confirmed with the provider.
+10. `WEB_URL`, `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_API_URL` set to the final production origins.
 
 Do not deploy with the draft legal banner while accepting payments. Removing the banner is a decision for the business owners after review.
 
@@ -60,7 +64,7 @@ Or, from the repository root, run the workspace script:
 npm run db:migrate:deploy
 ```
 
-The first run creates the `Lead`, `Order`, `PaymentEvent` tables and enums. Verify in the provider console.
+The first run creates the `Lead`, `Order`, `PaymentEvent`, `NewsletterSubscriber`, `Notification`, `ChatConversation`, `ChatMessage` and `AiUsage` tables plus their enums and indexes. The initial migration is committed at `packages/database/prisma/migrations/20261114160000_init/migration.sql`. Verify in the provider console and check `_prisma_migrations`.
 
 For subsequent schema changes:
 
@@ -133,6 +137,20 @@ curl -i -X OPTIONS https://api.doublegrowth.in/api/v1/leads \
 
 Expect `204` and `access-control-allow-origin: https://doublegrowth.in`.
 
+### 4.4 API container
+
+A multi-stage container is provided:
+
+```bash
+docker build -f deploy/api.Dockerfile -t double-growth-api .
+docker run --rm -p 4000:4000 \
+  -e DATABASE_URL="postgresql://..." \
+  -e WEB_URL="https://doublegrowth.in" \
+  double-growth-api
+```
+
+The image runs the same `node apps/api/dist/server.js` entry point, includes the generated Prisma client and has a `/health` health check. No secrets are baked into the image. The container was **not built in the development environment** because the Docker daemon was unavailable; build it once in staging before relying on it.
+
 ---
 
 ## 5. Website deployment
@@ -170,6 +188,18 @@ npm run start --workspace @double-growth/web
 
 The site uses no image optimisation at runtime beyond Next defaults, so a Node host is sufficient.
 
+### 5.3 Website container
+
+```bash
+docker build -f deploy/web.Dockerfile \
+  --build-arg NEXT_PUBLIC_SITE_URL=https://doublegrowth.in \
+  --build-arg NEXT_PUBLIC_API_URL=https://api.doublegrowth.in \
+  -t double-growth-web .
+docker run --rm -p 3000:3000 double-growth-web
+```
+
+`NEXT_PUBLIC_*` values are compile-time, so rebuild when they change. Like the API image, this was **not built in the development environment**; verify it in staging.
+
 ---
 
 ## 6. Domains, DNS and TLS
@@ -204,24 +234,39 @@ Set `AI_PROVIDER=openai-compatible`, `AI_BASE_URL`, `AI_MODEL` and `AI_API_KEY`.
 
 Without these variables the assistant reports `AI_NOT_CONFIGURED` and directs visitors to the contact page. Do not deploy a prompt that claims capabilities not present in the system prompt.
 
-Set a spending limit at the provider. `AI_MONTHLY_BUDGET_INR` is documentation of intent; it is not enforced by the application in V1.
+`AI_MONTHLY_REQUEST_LIMIT` (default 500) is an application-level guardrail stored in `AiUsage`. It is not a billing meter. Configure a hard spending limit at the provider as well.
 
 ---
 
-## 9. Post-deployment verification
+## 9. Email configuration
+
+Set `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `EMAIL_FROM` and optionally `EMAIL_REPLY_TO` and `LEAD_NOTIFICATION_EMAIL`.
+
+1. Verify the sending domain with Resend.
+2. Publish SPF, DKIM and DMARC records.
+3. Send a test lead and confirm the acknowledgement plus internal notification.
+4. Check `Notification` rows: `SENT` means the provider accepted the message, not that it reached the inbox.
+5. Without configuration, rows are `SKIPPED` and no email is sent.
+
+---
+
+## 10. Post-deployment verification
 
 Run through this list on the production domain:
 
-- [ ] All 13 routes, `/pricing/checkout` and the three portfolio detail pages return `200`; unknown route returns the 404 page
+- [ ] All 15 public routes, `/pricing/checkout`, the 8 service detail pages and the 3 portfolio concept pages return `200`; unknown route returns the 404 page
 - [ ] Homepage sections render in order and all CTAs navigate correctly
-- [ ] Mobile navigation opens, closes and follows links at 360px
+- [ ] Mobile navigation opens, closes and follows links at 390 px
 - [ ] No horizontal overflow at 360, 390, 430, 768, 1024, 1280, 1440, 1920
 - [ ] Contact form: invalid input blocked, valid input stored (check the database), success shows only after `201`
+- [ ] Newsletter: valid address stored, duplicate is idempotent, honeypot rejected
 - [ ] Order flow: order number issued, payment state reported honestly
-- [ ] Chat: real answer with a provider, honest unavailable state without one
+- [ ] Payment creation: only payable orders receive a checkout target
+- [ ] Chat: real answer with a provider, honest unavailable state without one, quota error after the cap
+- [ ] Email: acknowledgement and internal lead notification delivered; `Notification` status is `SENT`
 - [ ] Payment webhook: signed event applied once, replay ignored
-- [ ] `/health` and `/health/ready` return `200`
-- [ ] `robots.txt` and `sitemap.xml` reference the production domain
+- [ ] `/health` and `/health/ready` return `200`; `/health` reports configured integrations
+- [ ] `robots.txt` and `sitemap.xml` reference the production domain and include `/solutions` and service pages
 - [ ] Open Graph image and metadata render correctly
 - [ ] Security headers present: CSP, HSTS, `X-Frame-Options`, `Referrer-Policy`, `nosniff`
 - [ ] CORS rejects an unlisted origin
@@ -230,7 +275,7 @@ Run through this list on the production domain:
 
 ---
 
-## 10. Operations
+## 11. Operations
 
 ### Logging
 
@@ -244,7 +289,8 @@ The API logs structured JSON. Authorization, cookie and webhook-signature header
 | Database | `GET /health/ready` every minute |
 | Error rate | 5xx responses |
 | Payment failures | webhook `4xx`/`5xx` and orders stuck in `PENDING_PAYMENT` |
-| AI failures | `AI_PROVIDER_ERROR` rate |
+| AI failures | `AI_PROVIDER_ERROR` and `AI_QUOTA_EXCEEDED` rate |
+| Email failures | `Notification` rows with `FAILED` |
 
 No external monitoring or error-tracking service is configured in V1.
 
@@ -264,12 +310,13 @@ Rate limiting is in-process. If the API runs more than one instance, limits appl
 
 ---
 
-## 11. Secret rotation
+## 12. Secret rotation
 
 | Secret | Procedure |
 | --- | --- |
 | `UPI_WEBHOOK_SECRET` | Generate a new value, update the API and provider together, redeploy, confirm a test event |
 | `AI_API_KEY` | Rotate at the provider, update the API environment, redeploy |
+| `RESEND_API_KEY` | Rotate in Resend, update the API environment, redeploy, send a test message |
 | `DATABASE_URL` credentials | Create the new credential, update the API, verify readiness, remove the old credential |
 | `PAYPAL_CLIENT_SECRET` | Rotate in the PayPal dashboard and the API environment |
 
@@ -277,8 +324,12 @@ After any rotation, re-run the post-deployment verification list.
 
 ---
 
-## 12. What is not automated
+## 13. What is not automated
 
-- No CI pipeline is committed. Add a workflow that runs install, typecheck, lint, test and build on pull requests.
-- No container image is provided. Docker is installed locally but the daemon is stopped; containerisation can be added when the hosting choice requires it.
-- No infrastructure-as-code. DNS, hosts and environment variables are configured manually.
+- Infrastructure-as-code. DNS, hosts, environment variables and secret stores are configured manually.
+- Automatic rollback. Website and API rollbacks are manual host actions; database migrations are forward-only.
+- Container builds in CI. Dockerfiles are committed but were not built in the development environment.
+- Visual-regression baselines. Screenshots are captured on demand, not compared against stored baselines.
+- Uptime, error tracking and alerting. Add a monitoring service before launch.
+
+CI is committed at `.github/workflows/ci.yml` and runs install, Prisma generation, typecheck, lint, tests, build and Playwright E2E on pushes and pull requests.

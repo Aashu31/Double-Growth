@@ -5,10 +5,14 @@ import {
   isPrismaConnectionError,
   isPrismaKnownError,
 } from "@double-growth/database";
-import type { LeadInput, OrderInput } from "@double-growth/validators";
+import type {
+  LeadInput,
+  OrderInput,
+} from "@double-growth/validators";
 import { AppError } from "../errors.js";
 import type {
   LeadRecord,
+  NotificationInput,
   OrderRecord,
   OrderRepository,
   PaymentEventInput,
@@ -219,6 +223,10 @@ export function createPrismaRepositories(): Repositories {
                 orderNumber: order.orderNumber,
                 status: order.status,
                 duplicate: true,
+                email: order.email,
+                customerName: order.customerName,
+                amountMinor: order.amountMinor,
+                currency: order.currency,
               };
             }
 
@@ -263,6 +271,10 @@ export function createPrismaRepositories(): Repositories {
               orderNumber: updated.orderNumber,
               status: updated.status,
               duplicate: false,
+              email: updated.email,
+              customerName: updated.customerName,
+              amountMinor: updated.amountMinor,
+              currency: updated.currency,
             };
           });
         } catch (error) {
@@ -270,7 +282,14 @@ export function createPrismaRepositories(): Repositories {
             // A concurrent delivery inserted the same event first.
             const order = await prisma.order.findUnique({
               where: { orderNumber: event.orderNumber },
-              select: { orderNumber: true, status: true },
+              select: {
+                orderNumber: true,
+                status: true,
+                email: true,
+                customerName: true,
+                amountMinor: true,
+                currency: true,
+              },
             });
 
             if (order) {
@@ -278,6 +297,130 @@ export function createPrismaRepositories(): Repositories {
             }
           }
 
+          throw asDatabaseError(error);
+        }
+      },
+    },
+
+    newsletter: {
+      async subscribe(email: string, source: string) {
+        try {
+          const existing = await prisma.newsletterSubscriber.findUnique({
+            where: { email },
+            select: { id: true, email: true, createdAt: true, status: true },
+          });
+
+          if (existing) {
+            if (existing.status !== "ACTIVE") {
+              await prisma.newsletterSubscriber.update({
+                where: { email },
+                data: { status: "ACTIVE", source },
+              });
+            }
+
+            return {
+              id: existing.id,
+              email: existing.email,
+              createdAt: existing.createdAt,
+              duplicate: true,
+            };
+          }
+
+          const created = await prisma.newsletterSubscriber.create({
+            data: { email, source, status: "ACTIVE" },
+            select: { id: true, email: true, createdAt: true },
+          });
+
+          return { ...created, duplicate: false };
+        } catch (error) {
+          if (isPrismaKnownError(error) && error.code === "P2002") {
+            const existing = await prisma.newsletterSubscriber.findUnique({
+              where: { email },
+              select: { id: true, email: true, createdAt: true },
+            });
+            if (existing) return { ...existing, duplicate: true };
+          }
+
+          throw asDatabaseError(error);
+        }
+      },
+    },
+
+    notifications: {
+      async create(input: NotificationInput) {
+        try {
+          await prisma.notification.create({
+            data: {
+              type: input.type,
+              recipient: input.recipient,
+              subject: input.subject,
+              status:
+                input.status === "sent"
+                  ? "SENT"
+                  : input.status === "failed"
+                    ? "FAILED"
+                    : "SKIPPED",
+              provider: input.provider,
+              error: input.error?.slice(0, 500) ?? null,
+              leadId: input.leadId ?? null,
+              orderId: input.orderId ?? null,
+            },
+          });
+        } catch (error) {
+          // Notification records are operational telemetry. A failure to write
+          // one must never roll back the lead, order or subscription itself.
+          if (isPrismaConnectionError(error)) return;
+          throw asDatabaseError(error);
+        }
+      },
+    },
+
+    chat: {
+      async saveExchange({ userMessage, assistantMessage }) {
+        try {
+          await prisma.chatConversation.create({
+            data: {
+              messages: {
+                create: [
+                  { role: "USER", content: userMessage.slice(0, 4000) },
+                  {
+                    role: "ASSISTANT",
+                    content: assistantMessage.slice(0, 8000),
+                  },
+                ],
+              },
+            },
+          });
+        } catch (error) {
+          // Conversation logging is best-effort and must not break the chat.
+          if (isPrismaConnectionError(error)) return;
+          throw asDatabaseError(error);
+        }
+      },
+    },
+
+    aiUsage: {
+      async consume({ period, promptChars, requestLimit }) {
+        try {
+          const usage = await prisma.aiUsage.upsert({
+            where: { period },
+            create: {
+              period,
+              requestCount: 1,
+              promptChars,
+            },
+            update: {
+              requestCount: { increment: 1 },
+              promptChars: { increment: promptChars },
+            },
+            select: { requestCount: true },
+          });
+
+          return {
+            allowed: usage.requestCount <= requestLimit,
+            count: usage.requestCount,
+          };
+        } catch (error) {
           throw asDatabaseError(error);
         }
       },

@@ -3,7 +3,21 @@ import { findPackage } from "@double-growth/shared";
 import { orderLookupSchema, orderSchema } from "@double-growth/validators";
 import { AppError, parseBody } from "../errors.js";
 import { buildCheckoutTarget } from "../services/payments.js";
+import { orderConfirmationEmail } from "../services/email-templates.js";
+import { deliverNotification } from "../services/notifications.js";
 import type { AppDependencies } from "../app.js";
+
+function formatAmount(amountMinor: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(amountMinor / 100);
+  } catch {
+    return `${currency} ${(amountMinor / 100).toFixed(2)}`;
+  }
+}
 
 export function registerOrderRoutes(
   app: FastifyInstance,
@@ -56,10 +70,24 @@ export function registerOrderRoutes(
 
       const payment = buildCheckoutTarget(deps.config, order);
 
+      const delivery = await deliverNotification(deps, {
+        type: "ORDER_CONFIRMATION",
+        to: order.email,
+        orderId: order.id,
+        content: orderConfirmationEmail({
+          name: order.customerName,
+          orderNumber: order.orderNumber,
+          packageName: selectedPackage.name,
+          amount: formatAmount(order.amountMinor, order.currency),
+          paymentEnabled: payment.enabled,
+        }),
+      });
+
       request.log.info({
         event: "order_created",
         orderNumber: order.orderNumber,
         paymentEnabled: payment.enabled,
+        emailStatus: delivery.status,
       });
 
       return reply.status(201).send({

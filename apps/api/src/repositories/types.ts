@@ -31,6 +31,10 @@ export interface WebhookResult {
   orderNumber: string;
   status: string;
   duplicate: boolean;
+  email: string;
+  customerName: string;
+  amountMinor: number;
+  currency: string;
 }
 
 export interface LeadRepository {
@@ -43,9 +47,65 @@ export interface OrderRepository {
   applyPaymentEvent(event: PaymentEventInput): Promise<WebhookResult>;
 }
 
+export interface NewsletterRecord {
+  id: string;
+  email: string;
+  createdAt: Date;
+  duplicate: boolean;
+}
+
+export const NOTIFICATION_TYPES = [
+  "LEAD_ACKNOWLEDGEMENT",
+  "LEAD_INTERNAL",
+  "ORDER_CONFIRMATION",
+  "PAYMENT_CONFIRMATION",
+  "PAYMENT_FAILURE",
+  "NEWSLETTER_WELCOME",
+] as const;
+
+export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
+
+export interface NotificationInput {
+  type: NotificationType;
+  recipient: string;
+  subject: string;
+  status: "sent" | "failed" | "skipped";
+  provider: string | null;
+  error?: string;
+  leadId?: string;
+  orderId?: string;
+}
+
+export interface NewsletterRepository {
+  subscribe(email: string, source: string): Promise<NewsletterRecord>;
+}
+
+export interface NotificationRepository {
+  create(input: NotificationInput): Promise<void>;
+}
+
+export interface ChatRepository {
+  saveExchange(input: {
+    userMessage: string;
+    assistantMessage: string;
+  }): Promise<void>;
+}
+
+export interface AiUsageRepository {
+  consume(input: {
+    period: string;
+    promptChars: number;
+    requestLimit: number;
+  }): Promise<{ allowed: boolean; count: number }>;
+}
+
 export interface Repositories {
   leads: LeadRepository;
   orders: OrderRepository;
+  newsletter: NewsletterRepository;
+  notifications: NotificationRepository;
+  chat: ChatRepository;
+  aiUsage: AiUsageRepository;
 }
 
 export interface ChatProvider {

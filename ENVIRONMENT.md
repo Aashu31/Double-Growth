@@ -40,10 +40,12 @@ If the site or API moves to another host, update all three and redeploy both app
 When `DATABASE_URL` is empty:
 
 - `POST /api/v1/leads` returns `503 DATABASE_NOT_CONFIGURED`
+- `POST /api/v1/newsletter` returns `503 DATABASE_NOT_CONFIGURED`
 - `POST /api/v1/orders` returns `503 DATABASE_NOT_CONFIGURED`
-- order lookup returns `503`
+- order lookup and payment creation return `503`
+- chat still answers when configured, using a per-process usage counter, but transcripts are not stored
 - `/health/ready` returns `503` with `database: "not_configured"`
-- the website itself keeps working
+- catalogue endpoints and the website itself keep working
 
 ---
 
@@ -55,7 +57,7 @@ When `DATABASE_URL` is empty:
 | `AI_BASE_URL` | empty | No | Base URL, e.g. `https://api.openai.com/v1` |
 | `AI_MODEL` | empty | No | Chat model identifier, e.g. `gpt-4o-mini` |
 | `AI_API_KEY` | empty | No | Server-side key. Never exposed to the browser. |
-| `AI_MONTHLY_BUDGET_INR` | `2000` | No | Reserved. Not enforced by the application in V1; budget control must be configured at the provider. |
+| `AI_MONTHLY_REQUEST_LIMIT` | `500` | No | Application-level monthly request guardrail. Stored in `AiUsage` with a database, otherwise in a per-process map. Not a billing meter. |
 
 All four of `AI_PROVIDER`, `AI_BASE_URL`, `AI_MODEL` and `AI_API_KEY` must be present. Otherwise `POST /api/v1/chat` returns `503 AI_NOT_CONFIGURED` and the widget tells the visitor the assistant is unavailable.
 
@@ -66,7 +68,36 @@ AI_PROVIDER=openai-compatible
 AI_BASE_URL=https://api.openai.com/v1
 AI_MODEL=gpt-4o-mini
 AI_API_KEY=sk-...
+AI_MONTHLY_REQUEST_LIMIT=500
 ```
+
+The request cap is a guardrail, not a spending guarantee. Configure a hard limit at the provider too. Exhaustion returns `429 AI_QUOTA_EXCEEDED`.
+
+---
+
+## Email notifications
+
+| Variable | Default | Required | Description |
+| --- | --- | --- | --- |
+| `EMAIL_PROVIDER` | empty | No | Only `resend` is supported |
+| `RESEND_API_KEY` | empty | No | Server-side key. Never exposed to the browser. |
+| `EMAIL_FROM` | empty | With Resend | Verified sender, e.g. `Double Growth <hello@doublegrowth.in>` |
+| `EMAIL_REPLY_TO` | empty | No | Optional reply-to address |
+| `LEAD_NOTIFICATION_EMAIL` | empty | No | Internal inbox for new lead notifications |
+
+`EMAIL_PROVIDER=resend` requires both `RESEND_API_KEY` and `EMAIL_FROM`; otherwise email is treated as unconfigured. Every attempt is recorded in `Notification` as `SENT`, `FAILED` or `SKIPPED`. A send failure never fails the lead, order or newsletter request.
+
+Example:
+
+```dotenv
+EMAIL_PROVIDER=resend
+RESEND_API_KEY=re_...
+EMAIL_FROM="Double Growth <hello@doublegrowth.in>"
+EMAIL_REPLY_TO="hello@doublegrowth.in"
+LEAD_NOTIFICATION_EMAIL="hello@doublegrowth.in"
+```
+
+Verify the sending domain with the provider and set SPF, DKIM and DMARC before launch.
 
 ---
 
@@ -99,7 +130,9 @@ Do **not** put a real UPI ID, QR code or gateway key in source code or documenta
 
 | Variable | Status |
 | --- | --- |
-| `EMAIL_API_KEY`, `EMAIL_FROM`, `LEAD_NOTIFICATION_EMAIL` | Present in `.env.example` for a future email integration. V1 stores leads in PostgreSQL and does not send email. |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID` | Reserved for a future PayPal integration. A webhook ID alone does not verify PayPal signatures; provider-specific verification is not implemented. |
+| `AI_MONTHLY_BUDGET_INR` | Retired. Use `AI_MONTHLY_REQUEST_LIMIT` plus a provider-side spend cap. |
+| `DIRECT_DATABASE_URL` | Reserved for pooled hosts; Prisma currently uses `DATABASE_URL`. |
 
 ---
 
@@ -130,4 +163,6 @@ DATABASE_URL=postgresql://...        # pooled connection if supported
 DIRECT_DATABASE_URL=postgresql://... # direct connection for migrations
 ```
 
-Optional, only when contracted: `AI_*`, `PAYMENTS_ENABLED`, `UPI_PAYMENT_LINK_TEMPLATE`, `UPI_WEBHOOK_SECRET`, `PAYPAL_*`.
+Optional, only when contracted: `AI_*`, `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`, `LEAD_NOTIFICATION_EMAIL`, `PAYMENTS_ENABLED`, `UPI_PAYMENT_LINK_TEMPLATE`, `UPI_WEBHOOK_SECRET`, `PAYPAL_*`.
+
+Without the optional values, the API reports those integrations as not configured and never simulates their effects.

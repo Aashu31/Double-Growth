@@ -29,6 +29,13 @@ const envSchema = z.object({
   AI_BASE_URL: optionalUrl,
   AI_MODEL: optionalString,
   AI_API_KEY: optionalString,
+  AI_MONTHLY_REQUEST_LIMIT: z.coerce.number().int().min(1).default(500),
+
+  EMAIL_PROVIDER: z.enum(["resend"]).optional(),
+  RESEND_API_KEY: optionalString,
+  EMAIL_FROM: optionalString,
+  EMAIL_REPLY_TO: optionalString,
+  LEAD_NOTIFICATION_EMAIL: optionalString,
 
   PAYMENTS_ENABLED: z
     .enum(["true", "false"])
@@ -54,6 +61,14 @@ export type AppConfig = {
     baseUrl: string | null;
     model: string | null;
     apiKey: string | null;
+    monthlyRequestLimit: number;
+  };
+  email: {
+    provider: "resend" | null;
+    apiKey: string | null;
+    from: string | null;
+    replyTo: string | null;
+    internalRecipient: string | null;
   };
   payments: {
     enabled: boolean;
@@ -107,6 +122,19 @@ export function loadConfig(
       baseUrl: env.AI_BASE_URL ?? null,
       model: env.AI_MODEL ?? null,
       apiKey: env.AI_API_KEY ?? null,
+      monthlyRequestLimit: env.AI_MONTHLY_REQUEST_LIMIT,
+    },
+    email: {
+      provider:
+        env.EMAIL_PROVIDER === "resend" &&
+        env.RESEND_API_KEY &&
+        env.EMAIL_FROM
+          ? "resend"
+          : null,
+      apiKey: env.RESEND_API_KEY ?? null,
+      from: env.EMAIL_FROM ?? null,
+      replyTo: env.EMAIL_REPLY_TO ?? null,
+      internalRecipient: env.LEAD_NOTIFICATION_EMAIL ?? null,
     },
     payments: {
       enabled: paymentsEnabled,

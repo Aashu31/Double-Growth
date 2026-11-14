@@ -11,10 +11,14 @@ import { AppError } from "./errors.js";
 import { createPrismaRepositories } from "./repositories/prisma.js";
 import type { ChatProvider, Repositories } from "./repositories/types.js";
 import { createChatProvider } from "./services/ai.js";
+import { createEmailService, type EmailService } from "./services/email.js";
+import { registerCatalogueRoutes } from "./routes/catalogue.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerLeadRoutes } from "./routes/leads.js";
+import { registerNewsletterRoutes } from "./routes/newsletter.js";
 import { registerOrderRoutes } from "./routes/orders.js";
+import { registerPaymentRoutes } from "./routes/payments.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 
 declare module "fastify" {
@@ -27,6 +31,7 @@ export interface AppDependencies {
   config: AppConfig;
   repositories: Repositories | null;
   chat: ChatProvider;
+  email: EmailService;
   checkDatabase: () => Promise<boolean>;
 }
 
@@ -34,6 +39,7 @@ export interface BuildAppOptions {
   config?: AppConfig;
   repositories?: Repositories | null;
   chat?: ChatProvider;
+  email?: EmailService;
   checkDatabase?: () => Promise<boolean>;
   logger?: FastifyServerOptions["logger"];
 }
@@ -63,6 +69,7 @@ export async function buildApp(
       : options.repositories;
 
   const chat = options.chat ?? createChatProvider(config);
+  const email = options.email ?? createEmailService(config);
 
   const checkDatabase =
     options.checkDatabase ??
@@ -76,7 +83,7 @@ export async function buildApp(
       }
     });
 
-  const deps: AppDependencies = { config, repositories, chat, checkDatabase };
+  const deps: AppDependencies = { config, repositories, chat, email, checkDatabase };
 
   const app = Fastify({
     logger:
@@ -218,8 +225,11 @@ export async function buildApp(
   }));
 
   registerHealthRoutes(app, deps);
+  registerCatalogueRoutes(app);
   registerLeadRoutes(app, deps);
+  registerNewsletterRoutes(app, deps);
   registerOrderRoutes(app, deps);
+  registerPaymentRoutes(app, deps);
   registerChatRoutes(app, deps);
   registerWebhookRoutes(app, deps);
 

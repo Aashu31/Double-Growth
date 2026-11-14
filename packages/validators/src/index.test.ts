@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   chatSchema,
   leadSchema,
+  newsletterSchema,
   orderSchema,
   orderLookupSchema,
   paymentWebhookSchema,
-} from "./index.js";
+} from "./index";
 
 const lead = {
   name: "Riya Sharma",
@@ -125,5 +126,31 @@ describe("paymentWebhookSchema", () => {
     expect(
       paymentWebhookSchema.safeParse({ ...base, provider: "CARD" }).success,
     ).toBe(false);
+  });
+});
+
+describe("newsletterSchema", () => {
+  it("normalises the email address", () => {
+    const parsed = newsletterSchema.parse({ email: "READER@Example.com" });
+    expect(parsed.email).toBe("reader@example.com");
+  });
+
+  it("rejects an invalid email and an overlong source", () => {
+    expect(newsletterSchema.safeParse({ email: "not-an-email" }).success).toBe(
+      false,
+    );
+    expect(
+      newsletterSchema.safeParse({
+        email: "reader@example.com",
+        source: "x".repeat(81),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts the honeypot field so the API can reject spam itself", () => {
+    expect(
+      newsletterSchema.safeParse({ email: "reader@example.com", website: "" })
+        .success,
+    ).toBe(true);
   });
 });

@@ -89,6 +89,15 @@ export const orderSchema = z.object({
 
 export type OrderInput = z.infer<typeof orderSchema>;
 
+export const newsletterSchema = z.object({
+  email: emailSchema,
+  source: z.string().trim().max(80).optional(),
+  // Honeypot field. Real visitors never see or fill this.
+  website: z.string().max(200).optional(),
+});
+
+export type NewsletterInput = z.infer<typeof newsletterSchema>;
+
 export const orderLookupSchema = z.object({
   email: emailSchema,
 });

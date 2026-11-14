@@ -60,6 +60,7 @@ Copy-Item .env.example .env
 - no `DATABASE_URL` → forms show "not configured" and store nothing
 - no payment template/secret → orders stay pending, no checkout link
 - no AI credentials → chatbot reports unavailable
+- no email credentials → notification attempts are recorded as skipped and no email is sent
 
 Full variable reference: [`ENVIRONMENT.md`](./ENVIRONMENT.md).
 
@@ -92,16 +93,16 @@ Notes:
 
 - URL-encode special characters in the password (for example `@` becomes `%40`).
 - `DIRECT_DATABASE_URL` is reserved for pooled-host deployments; locally it can match `DATABASE_URL`.
-- The `Lead`, `Order` and `PaymentEvent` tables do not exist until the first migration runs.
+- The `Lead`, `Order`, `PaymentEvent`, `NewsletterSubscriber`, `Notification`, `ChatConversation`, `ChatMessage` and `AiUsage` tables do not exist until the migration runs.
 
-Apply the schema:
+Apply the committed schema:
 
 ```powershell
 npm run db:generate
-npm run db:migrate
+npm run db:migrate:deploy
 ```
 
-`db:migrate` runs `prisma migrate dev`, creates `packages/database/prisma/migrations/`, applies it, and regenerates the client. Name the migration when prompted (for example `init`).
+`db:migrate:deploy` applies `packages/database/prisma/migrations/20261114160000_init` without prompting. If you change the schema while developing, use `npm run db:migrate` to create a new migration and name it when prompted.
 
 Verify:
 
@@ -145,21 +146,25 @@ npm run dev:api
 npm run typecheck    # TypeScript, all workspaces
 npm run lint         # ESLint, web app
 npm test             # Vitest: API, validators and frontend components
+npm run test:e2e     # Playwright: desktop + mobile
+npm run audit:visual # 27 routes × 3 viewports
 npm run build        # production build, web + API
 ```
 
-Expected at the time of writing: typecheck clean, lint clean, 34 tests passing (15 API, 9 validators, 10 frontend), 23 web routes generated.
+Expected at the time of writing: typecheck clean, lint clean, 43 unit/component tests passing (21 API, 12 validators, 10 frontend), 28 Playwright tests passing, 81 visual captures with 0 structural failures, and a successful production build.
 
 Manual checks after starting the servers:
 
-1. Visit all 13 routes plus `/pricing/checkout` and the three `/portfolio/[slug]` pages; confirm no horizontal scroll at 360, 390, 430, 768, 1024, 1280, 1440 and 1920 px.
+1. Visit all 15 public routes plus `/pricing/checkout`, the eight `/services/[slug]` pages and the three `/portfolio/[slug]` pages; confirm no horizontal scroll at 360, 390, 430, 768, 1024, 1280, 1440 and 1920 px.
 2. Submit the contact form with an empty field → inline validation, no network success.
 3. Submit a valid enquiry without a database → honest "not configured" message, no success screen.
 4. Open the chat widget → welcome message and suggested questions; sending one returns the honest unavailable message, never a fabricated answer. Test the reset confirmation dialog.
 5. Filter the portfolio by category and open a concept detail page; confirm the "Design concept" label.
-6. Visit `/pricing/checkout`, place an order → either an order number or an honest configuration error.
-7. Check `/sitemap.xml`, `/robots.txt`, `/opengraph-image`.
-8. Confirm unknown routes render the 404 page.
+6. Visit `/solutions`, switch tabs and follow a related service link.
+7. Subscribe to the newsletter with an invalid address → local error; with a valid address and no database → honest unconfigured message.
+8. Visit `/pricing/checkout`, place an order → either an order number or an honest configuration error.
+9. Check `/sitemap.xml`, `/robots.txt`, `/opengraph-image`.
+10. Confirm unknown routes render the 404 page.
 
 ---
 
@@ -206,6 +211,14 @@ The API only accepts the origins in `WEB_URL` plus `http://localhost:3000`. If t
 
 Expected without `AI_PROVIDER=openai-compatible`, `AI_BASE_URL`, `AI_MODEL` and `AI_API_KEY`. This is not a bug.
 
+### Newsletter returns `DATABASE_NOT_CONFIGURED`
+
+The push of newsletter storage is not configured until `DATABASE_URL` is set and the migration is applied. This is expected without a database.
+
+### Emails are not delivered
+
+Check `EMAIL_PROVIDER=resend`, `RESEND_API_KEY` and `EMAIL_FROM`. Inspect the `Notification` table: `SKIPPED` means no provider was configured, `FAILED` means the provider rejected the message, and `SENT` means the provider accepted it. `SENT` is not proof of inbox delivery.
+
 ### Payment link is missing
 
 Expected unless `PAYMENTS_ENABLED=true` and `UPI_PAYMENT_LINK_TEMPLATE` contains `{orderNumber}` and uses HTTPS. Orders are still recorded.
@@ -218,9 +231,10 @@ The image is rendered with Satori, which requires every multi-child `<div>` to d
 
 ## 8. Next steps
 
-- Provide database credentials and apply the first migration.
+- Provide database credentials and apply the committed migration with `npm run db:migrate:deploy`.
 - Contract a payment provider and configure the webhook secret.
 - Configure an AI provider if the assistant should answer automatically.
+- Configure Resend and a verified sender domain for notifications.
 - Replace legal drafts with reviewed policies.
 - Add real client projects and verified testimonials through the content files; replace the labelled design concepts when approved work exists.
 - Add verified contact details and founder identities when confirmed.

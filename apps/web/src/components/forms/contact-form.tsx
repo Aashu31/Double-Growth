@@ -35,8 +35,11 @@ const initialValues = {
 const inputClass =
   "mt-2 w-full rounded-xl border border-cloud bg-white px-4 py-3 text-sm text-ink outline-none transition-colors placeholder:text-slate/50 focus:border-electric";
 
-export function ContactForm() {
-  const [values, setValues] = useState(initialValues);
+export function ContactForm({ defaultService }: { defaultService?: string }) {
+  const [values, setValues] = useState(() => ({
+    ...initialValues,
+    service: defaultService ?? "",
+  }));
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "sending" | "success">("idle");
@@ -84,7 +87,7 @@ export function ContactForm() {
 
       setReference(response.data.id);
       setStatus("success");
-      setValues(initialValues);
+      setValues({ ...initialValues, service: defaultService ?? "" });
     } catch (error) {
       setStatus("idle");
       if (error instanceof ApiError) {
@@ -319,7 +322,7 @@ export function ContactForm() {
                 value={method}
                 checked={values.preferredContact === method}
                 onChange={() => update("preferredContact", method)}
-                className="h-4 w-4 accent-[#2F6BFF]"
+                className="h-4 w-4 accent-[#2563EB]"
               />
               {method}
             </label>
@@ -334,7 +337,7 @@ export function ContactForm() {
             checked={values.consent}
             onChange={(event) => update("consent", event.target.checked)}
             aria-invalid={Boolean(errors.consent)}
-            className="mt-1 h-4 w-4 shrink-0 accent-[#2F6BFF]"
+            className="mt-1 h-4 w-4 shrink-0 accent-[#2563EB]"
           />
           <span>
             I consent to Double Growth using the details above to respond to

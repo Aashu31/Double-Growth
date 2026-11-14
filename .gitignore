@@ -41,10 +41,11 @@ pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Test artifacts
+# Test and QA artifacts
 playwright-report/
 test-results/
 blob-report/
+artifacts/
 
 # Local uploads and temporary files
 uploads/

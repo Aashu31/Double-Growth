@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { paymentWebhookSchema } from "@double-growth/validators";
 import { AppError, parseBody } from "../errors.js";
 import { verifyWebhookSignature } from "../services/payments.js";
+import { paymentStatusEmail } from "../services/email-templates.js";
+import { deliverNotification } from "../services/notifications.js";
 import type { AppDependencies } from "../app.js";
 
 /**
@@ -93,6 +95,29 @@ export function registerWebhookRoutes(
         status: result.status,
         duplicate: result.duplicate,
       });
+
+      if (!result.duplicate) {
+        const delivery = await deliverNotification(deps, {
+          type:
+            payload.status === "paid"
+              ? "PAYMENT_CONFIRMATION"
+              : "PAYMENT_FAILURE",
+          to: result.email,
+          orderId: result.orderNumber,
+          content: paymentStatusEmail({
+            name: result.customerName,
+            orderNumber: result.orderNumber,
+            status: payload.status,
+            amount: `${result.currency} ${(result.amountMinor / 100).toFixed(2)}`,
+          }),
+        });
+
+        request.log.info({
+          event: "payment_notification",
+          orderNumber: result.orderNumber,
+          emailStatus: delivery.status,
+        });
+      }
 
       return {
         data: {

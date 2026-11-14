@@ -30,7 +30,22 @@ export function PageHero({
           <div className="absolute inset-0 grid-surface opacity-60" aria-hidden="true" />
           <div className="absolute inset-0 glow-surface" aria-hidden="true" />
         </>
-      ) : null}
+      ) : (
+        <>
+          <div
+            className="absolute inset-0 grid-surface-light opacity-70 [mask-image:linear-gradient(to_bottom,black,transparent_88%)]"
+            aria-hidden="true"
+          />
+          <div
+            className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 rounded-full bg-electric/10 blur-3xl"
+            aria-hidden="true"
+          />
+          <div
+            className="pointer-events-none absolute right-[18%] top-10 hidden h-40 w-px bg-gradient-to-b from-electric/25 to-transparent lg:block"
+            aria-hidden="true"
+          />
+        </>
+      )}
       <div className="container-page relative py-14 sm:py-20">
         <div className="max-w-3xl">
           <p className={cn("eyebrow", dark && "text-cyan")}>{eyebrow}</p>

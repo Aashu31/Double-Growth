@@ -15,6 +15,9 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspace @double-growth/web",
     "test": "npm run test --workspaces --if-present",
+    "test:e2e": "playwright test",
+    "audit:visual": "node scripts/visual-audit.mjs",
+    "verify": "npm run typecheck && npm run lint && npm test && npm run build",
     "db:generate": "npm run generate --workspace @double-growth/database",
     "db:migrate": "npm run migrate --workspace @double-growth/database",
     "db:migrate:deploy": "npm run migrate:deploy --workspace @double-growth/database",
@@ -24,6 +27,7 @@
     "node": ">=20.9.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "concurrently": "10.0.7",
     "typescript": "5.9.3"
   }

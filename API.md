@@ -38,16 +38,24 @@ Errors always use one shape:
 | --- | --- | --- |
 | `VALIDATION_ERROR` | 400 | Request failed schema validation |
 | `SPAM_REJECTED` | 400 | Honeypot field was filled |
+| `PAYMENT_VERIFICATION_FAILED` | 400 | Raw webhook body could not be verified |
 | `AMOUNT_MISMATCH` | 400 | Webhook amount or currency differs from the order |
 | `INVALID_SIGNATURE` | 401 | Webhook HMAC validation failed |
 | `ORDER_NOT_FOUND` | 404 | Reference and email do not match an order |
+| `SERVICE_NOT_FOUND` | 404 | No service matches the slug |
+| `SOLUTION_NOT_FOUND` | 404 | No solution matches the slug |
+| `PROJECT_NOT_FOUND` | 404 | No portfolio project matches the slug |
 | `NOT_FOUND` | 404 | Unknown route |
+| `ORDER_ALREADY_PAID` | 409 | A payment target was requested for a paid order |
+| `ORDER_NOT_PAYABLE` | 409 | Order is cancelled or refunded |
 | `RATE_LIMITED` | 429 | Rate limit exceeded |
+| `AI_QUOTA_EXCEEDED` | 429 | Monthly AI request allowance exhausted |
 | `DATABASE_NOT_CONFIGURED` | 503 | No database configured; nothing stored |
 | `DATABASE_UNAVAILABLE` | 503 | Database configured but unreachable |
 | `AI_NOT_CONFIGURED` | 503 | No AI provider configured |
 | `PAYMENTS_NOT_CONFIGURED` | 503 | Payment webhook/provider not configured |
 | `AI_PROVIDER_ERROR` | 502 | AI provider call failed |
+| `ORDER_CREATE_FAILED` | 500 | Order reference could not be generated |
 | `INTERNAL_ERROR` | 500 | Unexpected server error (generic message) |
 
 ---
@@ -58,9 +66,11 @@ Errors always use one shape:
 | --- | --- |
 | All routes (global) | 120 requests / minute / IP |
 | `POST /api/v1/leads` | 5 / minute |
+| `POST /api/v1/newsletter` | 5 / minute |
 | `POST /api/v1/orders` | 10 / minute |
 | `GET /api/v1/orders/:orderNumber` | 20 / minute |
 | `POST /api/v1/chat` | 20 / minute |
+| `POST /api/v1/payments/create` | 10 / minute |
 | `POST /api/v1/payments/webhook` | 60 / minute |
 
 Limits are per API instance, keyed by client IP. Behind a proxy, set `TRUST_PROXY=true` only when the proxy is trusted.
@@ -78,9 +88,17 @@ Liveness. Does not touch the database.
   "status": "ok",
   "service": "double-growth-api",
   "version": "1.0.0",
-  "time": "2026-11-14T09:15:00.000Z"
+  "time": "2026-11-14T09:15:00.000Z",
+  "integrations": {
+    "database": "not_configured",
+    "ai": "not_configured",
+    "email": "not_configured",
+    "payments": "not_configured"
+  }
 }
 ```
+
+Integration values are `configured` / `enabled` or `not_configured`. They report configuration presence only, never credentials.
 
 ### `GET /health/ready`
 
@@ -99,6 +117,33 @@ Readiness. Checks database configuration and connectivity.
 ```
 
 `database` may be `not_configured`, `unreachable` or `ok`.
+
+---
+
+## Public catalogue
+
+Read-only, served from `@double-growth/shared`. No database is required and responses are available when persistence is unconfigured.
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/v1/services` | Eight service summaries and full details |
+| `GET /api/v1/services/:slug` | One service; `404 SERVICE_NOT_FOUND` |
+| `GET /api/v1/solutions` | Five outcome-led solutions |
+| `GET /api/v1/solutions/:slug` | One solution; `404 SOLUTION_NOT_FOUND` |
+| `GET /api/v1/pricing` | Packages, inclusions, exclusions and policies |
+| `GET /api/v1/portfolio` | Three concepts with published/concept counts |
+| `GET /api/v1/portfolio/:slug` | One concept; `404 PROJECT_NOT_FOUND` |
+
+List responses use `data` plus `meta`:
+
+```json
+{
+  "data": [{ "id": "business-website", "name": "Business Website Development" }],
+  "meta": { "count": 8, "source": "shared-catalogue" }
+}
+```
+
+The catalogue is version-controlled, not editable at runtime. There are no write endpoints.
 
 ---
 
@@ -158,6 +203,43 @@ Request:
 ```
 
 Service ids: `business-website`, `ecommerce`, `custom-applications`, `school-management`, `ai-automation`, `cloud-devops`, `maintenance-support`, `digital-solutions`.
+
+After the lead is stored, the API attempts two emails:
+
+- an acknowledgement to the customer
+- an internal notification when `LEAD_NOTIFICATION_EMAIL` is set
+
+Email failure never fails the request. Without a configured provider, the attempt is recorded as `SKIPPED`.
+
+---
+
+## Newsletter
+
+### `POST /api/v1/newsletter`
+
+Request:
+
+```json
+{
+  "email": "riya@example.com",
+  "source": "footer",
+  "website": ""
+}
+```
+
+| Field | Rules |
+| --- | --- |
+| `email` | Valid email, max 254 characters, lowercased |
+| `source` | Optional, max 80 characters, defaults to `website` |
+| `website` | Honeypot; must be empty |
+
+`201`:
+
+```json
+{ "data": { "subscribed": true, "receivedAt": "2026-11-14T09:15:00.000Z" } }
+```
+
+Subscribing an existing address is idempotent: it reactivates an unsubscribed record and returns the original `createdAt`. A new subscriber triggers a welcome-email attempt. Without a database the endpoint returns `503 DATABASE_NOT_CONFIGURED`; a filled honeypot returns `400 SPAM_REJECTED`.
 
 ---
 
@@ -269,7 +351,59 @@ Request:
 }
 ```
 
-The server never generates a simulated answer. Chat history is not persisted.
+The server never generates a simulated answer. Chat is stateless for the model. When a database is configured, each user/assistant exchange is logged best-effort; logging failure never breaks a successful answer.
+
+### Monthly quota
+
+A request cap (`AI_MONTHLY_REQUEST_LIMIT`, default 500) limits cost. With a database, the counter lives in `AiUsage` keyed by UTC month; without one, a per-process map is used. Exhausting the cap returns:
+
+```json
+{
+  "error": {
+    "code": "AI_QUOTA_EXCEEDED",
+    "message": "The assistant has reached its monthly usage allowance. Please use the contact page so the team can respond directly."
+  }
+}
+```
+
+The cap is a guardrail, not a billing meter. Configure a hard spend limit at the provider as well.
+
+---
+
+## Payment creation
+
+### `POST /api/v1/payments/create`
+
+Creates a hosted checkout target for an **existing** order. It never marks the order paid.
+
+Request:
+
+```json
+{
+  "orderNumber": "DG-202611-0A1B2C3D4E",
+  "email": "riya@example.com"
+}
+```
+
+`200`:
+
+```json
+{
+  "data": {
+    "orderNumber": "DG-202611-0A1B2C3D4E",
+    "status": "PENDING_PAYMENT",
+    "payment": {
+      "enabled": false,
+      "checkoutUrl": null,
+      "message": "Online payment is not enabled on this environment yet..."
+    }
+  }
+}
+```
+
+Errors: `400 VALIDATION_ERROR`, `404 ORDER_NOT_FOUND`, `409 ORDER_ALREADY_PAID`, `409 ORDER_NOT_PAYABLE`, `503 DATABASE_NOT_CONFIGURED`.
+
+The checkout URL is generated only when the provider is enabled and the template is HTTPS with `{orderNumber}`. Only a verified webhook can change payment state.
 
 ---
 
@@ -315,7 +449,7 @@ Payload:
 { "data": { "orderNumber": "DG-202611-0A1B2C3D4E", "status": "PAID", "duplicate": false } }
 ```
 
-A repeated `eventId` returns `200` with `"duplicate": true` and changes nothing.
+A repeated `eventId` returns `200` with `"duplicate": true` and changes nothing. A non-duplicate event also attempts a payment-status email; delivery is best-effort and recorded in `Notification`.
 
 Verification order:
 
@@ -364,6 +498,18 @@ curl -X POST http://localhost:4000/api/v1/orders \
   -d '{"customerName":"Riya Sharma","email":"riya@example.com","phone":"9876543210","packageId":"growth-annual","consent":true}'
 
 curl "http://localhost:4000/api/v1/orders/DG-202611-0A1B2C3D4E?email=riya@example.com"
+
+curl http://localhost:4000/api/v1/services
+curl http://localhost:4000/api/v1/solutions
+curl http://localhost:4000/api/v1/pricing
+
+curl -X POST http://localhost:4000/api/v1/newsletter \
+  -H "content-type: application/json" \
+  -d '{"email":"riya@example.com","source":"footer"}'
+
+curl -X POST http://localhost:4000/api/v1/payments/create \
+  -H "content-type: application/json" \
+  -d '{"orderNumber":"DG-202611-0A1B2C3D4E","email":"riya@example.com"}'
 ```
 
 ---
@@ -381,5 +527,7 @@ Requests without an `Origin` header (server-to-server, curl) are allowed.
 - authentication or client portal endpoints
 - CRM/admin endpoints for reading leads or orders
 - provider-specific PayPal webhook verification
-- email notification delivery
 - file uploads
+- analytics or tracking endpoints
+- campaign management or bulk newsletter sending
+- webhook retry queue (providers must retry failed deliveries)

@@ -24,13 +24,13 @@ export function ServicesOverview() {
           </Link>
         </div>
 
-        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {servicesContent.map((service, index) => (
-            <Reveal key={service.id} delay={(index % 4) * 0.04}>
-              <ServiceCard service={service} />
-            </Reveal>
-          ))}
-        </div>
+            <div className="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+              {servicesContent.map((service, index) => (
+                <Reveal key={service.id} delay={(index % 4) * 0.04}>
+                  <ServiceCard service={service} index={index} />
+                </Reveal>
+              ))}
+            </div>
       </div>
     </section>
   );

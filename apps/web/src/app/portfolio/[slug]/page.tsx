@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowUpRight, Check, Info } from "lucide-react";
 import { projects } from "@/content/portfolio";
+import { ProjectVisual } from "@/components/art/project-visual";
 import { ButtonLink } from "@/components/ui/button";
 import { pageMetadata } from "@/lib/site";
 
@@ -71,7 +72,7 @@ export default async function ProjectPage({
           ) : null}
         </header>
 
-        <div className="mt-10 aspect-[16/9] overflow-hidden rounded-3xl bg-gradient-to-br from-navy via-navy-700 to-electric/70">
+        <div className="relative mt-10 aspect-[16/9] overflow-hidden rounded-3xl bg-gradient-to-br from-navy via-navy-700 to-electric/70">
           {project.image ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -80,10 +81,16 @@ export default async function ProjectPage({
               className="h-full w-full object-cover"
             />
           ) : (
-            <div className="grid-surface flex h-full items-center justify-center px-6 text-center text-sm text-white/55">
-              Visual preview pending. No invented screenshot is shown.
-            </div>
+            <ProjectVisual
+              visual={project.visual}
+              className="absolute inset-0 h-full w-full"
+            />
           )}
+          {project.concept ? (
+            <span className="absolute bottom-4 left-4 rounded-full bg-amber-300 px-3 py-1.5 text-[0.6rem] font-bold uppercase tracking-[0.1em] text-amber-950">
+              Design concept — not client work
+            </span>
+          ) : null}
         </div>
 
         {project.concept && project.note ? (

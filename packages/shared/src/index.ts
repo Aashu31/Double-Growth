@@ -158,3 +158,33 @@ export function findPackage(id: string) {
 export function findService(id: string) {
   return SERVICES.find((service) => service.id === id);
 }
+
+export {
+  SERVICE_DETAILS,
+  findServiceDetail,
+  type ServiceDetail,
+  type ServiceFaq,
+} from "./catalogue";
+
+export {
+  PROJECTS,
+  TESTIMONIALS,
+  findProject,
+  type Project,
+  type ProjectVisual,
+  type Testimonial,
+} from "./portfolio";
+
+export {
+  PACKAGE_EXCLUSIONS,
+  PACKAGE_INCLUSIONS,
+  PRICING_POLICIES,
+} from "./pricing";
+
+export {
+  SOLUTIONS,
+  SOLUTION_FAQS,
+  findSolution,
+  type Solution,
+  type SolutionFaq,
+} from "./solutions";

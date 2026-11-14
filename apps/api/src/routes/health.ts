@@ -10,6 +10,12 @@ export function registerHealthRoutes(
     service: "double-growth-api",
     version: process.env.npm_package_version ?? "1.0.0",
     time: new Date().toISOString(),
+    integrations: {
+      database: deps.config.databaseUrl ? "configured" : "not_configured",
+      ai: deps.chat.configured ? "configured" : "not_configured",
+      email: deps.email.configured ? "configured" : "not_configured",
+      payments: deps.config.payments.enabled ? "enabled" : "not_configured",
+    },
   }));
 
   app.get("/health/ready", async (request, reply) => {

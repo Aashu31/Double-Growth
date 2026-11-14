@@ -30,7 +30,7 @@ apps/api — Fastify 5
   │  routes → services → repositories
   │
   ├── packages/validators   Zod schemas
-  ├── packages/shared       services, package catalogue, enums
+  ├── packages/shared       services, solutions, portfolio, pricing, enums
   ├── packages/database     Prisma schema + client
   │
   ▼
@@ -78,6 +78,10 @@ CheckoutForm
 
 `payment.enabled` is true only when a template is configured, contains `{orderNumber}`, parses as a URL, and is HTTPS (localhost excepted). Otherwise `checkoutUrl` is `null` and the response explains that online payment is unavailable.
 
+After the order is stored, an order-confirmation email is attempted. Delivery is best-effort and recorded in `Notification`; it never changes the order response.
+
+Existing orders can request a fresh checkout target through `POST /api/v1/payments/create`. That endpoint requires both the order number and matching email, rejects paid/cancelled/refunded orders, and still never marks payment as complete.
+
 ### 3.4 Payment confirmation
 
 ```
@@ -103,7 +107,23 @@ Guarantees:
 
 The endpoint accepts generic HMAC-signed provider callbacks. PayPal event verification requires a provider-specific verifier and is not enabled by a webhook ID alone.
 
-### 3.5 Chat
+### 3.5 Newsletter
+
+```
+Footer form
+  → newsletterSchema (local validation)
+  → POST /api/v1/newsletter
+  → honeypot check
+  → repository.newsletter.subscribe
+       existing → reactivate if needed, duplicate: true
+       new      → insert ACTIVE subscriber
+  → welcome email attempt (best-effort)
+  → 201 { subscribed, receivedAt }
+```
+
+Without a database the endpoint returns `503 DATABASE_NOT_CONFIGURED`. Without an email provider the attempt is recorded as `SKIPPED`; the subscription itself still succeeds.
+
+### 3.6 Chat
 
 ```
 ChatWidget (history kept in component state)
@@ -113,7 +133,11 @@ ChatWidget (history kept in component state)
   → 200 { reply } | 503 AI_NOT_CONFIGURED | 502 AI_PROVIDER_ERROR
 ```
 
-The provider adapter calls an OpenAI-compatible `/chat/completions` endpoint. The system prompt contains only approved facts (services, package, policy statements) and instructs the model not to invent clients, prices, contact details or guarantees. Chat is stateless on the server; no transcript is persisted.
+The provider adapter calls an OpenAI-compatible `/chat/completions` endpoint. The system prompt contains only approved facts (services, package, policy statements) and instructs the model not to invent clients, prices, contact details or guarantees.
+
+A monthly request cap (`AI_MONTHLY_REQUEST_LIMIT`) is enforced before the provider call. With a database, `AiUsage` is the authoritative UTC-month counter; without one, a per-process map is used. Exhaustion returns `429 AI_QUOTA_EXCEEDED`.
+
+When a database is configured, the user/assistant exchange is logged best-effort. Logging failure never turns a successful answer into an error.
 
 ---
 
@@ -123,15 +147,15 @@ The provider adapter calls an OpenAI-compatible `/chat/completions` endpoint. Th
 | --- | --- | --- |
 | Pages | `apps/web/src/app` | Route composition, metadata, static rendering |
 | Components | `apps/web/src/components` | Layout, sections, forms, chat, UI primitives |
-| Content | `apps/web/src/content` | Services, process, FAQ, pricing rules, legal drafts, portfolio data |
+| Content | `apps/web/src/content` | Adapters over shared catalogue; process, FAQ, legal drafts |
 | Site config | `apps/web/src/lib/site.ts` | URL, navigation, `null` contact and founder placeholders |
 | API app | `apps/api/src/app.ts` | Plugins, hooks, error contract, route registration; testable factory |
 | Routes | `apps/api/src/routes` | HTTP concerns only: parse, delegate, shape response |
-| Services | `apps/api/src/services` | AI adapter, checkout URL construction, signature verification |
+| Services | `apps/api/src/services` | AI, email, notifications, payment links/signatures, usage quota |
 | Repositories | `apps/api/src/repositories` | Ports (`types.ts`) and Prisma implementation |
 | Contracts | `packages/validators` | Zod schemas shared across the boundary |
-| Domain constants | `packages/shared` | Service catalogue, package price, enums |
-| Persistence | `packages/database` | Prisma schema, generated client access |
+| Domain constants | `packages/shared` | Services, solutions, portfolio, pricing, enums |
+| Persistence | `packages/database` | Prisma schema, migration and generated client access |
 
 Dependency rule: `apps/*` may import `packages/*`; `packages/*` never import `apps/*`. The web app never imports the database package.
 
@@ -185,6 +209,24 @@ Immutable audit record for each provider event, with the raw payload stored as J
 
 Money is stored in minor units (integers) to avoid floating-point errors.
 
+### NewsletterSubscriber
+
+`email` is unique; `status` is `PENDING`, `ACTIVE` or `UNSUBSCRIBED`; `source` and `consentAt` record provenance. Re-subscribing reactivates rather than duplicating.
+
+### Notification
+
+Every email attempt is recorded with type, recipient, subject, status (`PENDING`, `SENT`, `FAILED`, `SKIPPED`), provider, truncated error and optional lead/order correlation ids. Writes are best-effort and never roll back a business operation.
+
+### ChatConversation / ChatMessage
+
+A conversation groups one user message and one assistant message. Storage is operational; a connection failure does not block the answer.
+
+### AiUsage
+
+One row per UTC month (`period` primary key) with `requestCount` and `promptChars`. This is a cost guardrail, not an invoice.
+
+The full schema, invariants and migration workflow are in [`DATABASE.md`](./DATABASE.md).
+
 ---
 
 ## 6. Security model
@@ -193,7 +235,9 @@ Money is stored in minor units (integers) to avoid floating-point errors.
 | --- | --- |
 | Input validation | Zod on client and server; server is authoritative |
 | Spam | Hidden honeypot field; per-IP rate limits |
-| Rate limiting | Global 120/min; leads 5/min; orders 10/min POST, 20/min lookup; chat 20/min; webhook 60/min |
+| Rate limiting | Global 120/min; leads 5/min; newsletter 5/min; orders 10/min POST, 20/min lookup; payments create 10/min; chat 20/min; webhook 60/min |
+| AI cost | Monthly request cap; 1000-char message cap; 12-item history cap |
+| Email | Server-side key; HTML built from validated fields; delivery status recorded |
 | Transport headers | CSP, HSTS, `X-Frame-Options: DENY`, `nosniff`, Referrer-Policy, Permissions-Policy |
 | CORS | Explicit origin allowlist from `WEB_URL` + localhost |
 | XSS | React escaping; JSON-LD serialised with `<` escaped |
@@ -211,14 +255,17 @@ CSP allows inline scripts because Next.js emits inline bootstrap code; the polic
 
 ## 7. Design system
 
+The full visual language is documented in [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md). Summary:
+
 - **Palette:** midnight/navy base, electric blue accent, cyan secondary, white and mist surfaces.
-- **Type:** Geist Sans, tight heading tracking, balanced text wrapping.
-- **Tokens:** declared in `apps/web/src/app/globals.css` under Tailwind 4 `@theme` — colours, radius, shadows, container and section rhythm.
+- **Type:** Geist Sans with Geist Mono for eyebrows and data.
+- **Tokens:** declared in `apps/web/src/app/globals.css` under Tailwind 4 `@theme`.
 - **Primitives:** `Button`, `ButtonLink`, `SectionHeading`, `Brand`, `BrandMark`, `PageHero`, `Reveal`.
-- **Motion:** Framer Motion reveals respect `prefers-reduced-motion`; CSS duration is also reduced globally.
-- **Composition:** homepage sections are independent components assembled in `apps/web/src/app/page.tsx`; content lives in `content/*.ts`, not inline in JSX. Order: hero → brand introduction → services → why choose us → process → pricing → featured portfolio → testimonials → FAQ → final CTA → footer.
-- **Responsive rules:** grid tracks use `minmax(0, …)` where long content could force a track wider than the viewport. The pricing comparison table is a labelled, keyboard-focusable scroll region on narrow screens.
-- **Tests:** Vitest + jsdom + Testing Library cover portfolio filtering, FAQ disclosure, contact-form validation/success/failure, header/mobile navigation and chatbot states in `apps/web/src/**/*.test.tsx`.
+- **Art:** original inline SVG service, project and orbit visuals; no stock images.
+- **Motion:** Framer Motion reveals respect `prefers-reduced-motion` and render identical initial markup on server and client.
+- **Composition:** homepage sections are independent components assembled in `apps/web/src/app/page.tsx`; content lives in `content/*.ts`, not inline in JSX.
+- **Responsive rules:** grid tracks use `minmax(0, …)`; the pricing comparison is a labelled, keyboard-focusable scroll region on narrow screens.
+- **Tests:** Vitest + jsdom + Testing Library cover interactive components; Playwright covers the assembled pages.
 
 Accessibility: skip link, semantic landmarks, labelled form controls, `aria-invalid` and `aria-describedby` on errors, visible focus rings, live regions for form and chat status, keyboard-operable accordion and menus.
 
@@ -235,9 +282,14 @@ The frontend maps these codes to specific copy:
 | `AI_NOT_CONFIGURED` | 503 | No AI provider; no answer generated |
 | `AI_PROVIDER_ERROR` | 502 | Provider call failed; no fabricated answer |
 | `PAYMENTS_NOT_CONFIGURED` | 503 | Webhook/payment provider absent; state unchanged |
+| `PAYMENT_VERIFICATION_FAILED` | 400 | Raw webhook body unavailable/unverifiable |
 | `INVALID_SIGNATURE` | 401 | HMAC mismatch; state unchanged |
 | `AMOUNT_MISMATCH` | 400 | Verified amount/currency differs from the order |
 | `ORDER_NOT_FOUND` | 404 | Unknown reference or email mismatch |
+| `ORDER_ALREADY_PAID` | 409 | Checkout target requested for a paid order |
+| `ORDER_NOT_PAYABLE` | 409 | Order cancelled or refunded |
+| `SERVICE_NOT_FOUND`, `SOLUTION_NOT_FOUND`, `PROJECT_NOT_FOUND` | 404 | Unknown catalogue slug |
+| `AI_QUOTA_EXCEEDED` | 429 | Monthly AI cap reached |
 | `SPAM_REJECTED` | 400 | Honeypot triggered |
 | `VALIDATION_ERROR` | 400 | Zod issues, with `fields` map |
 | `RATE_LIMITED` | 429 | Limit exceeded |
@@ -253,7 +305,8 @@ The V1 scope deliberately stops at the public website. These seams exist so late
 - **Client portal** — no auth exists in V1. When added, sessions belong in the API, and the schema can add `User`/`Client` relations without changing public routes.
 - **Sarthi school ERP** — presented as a platform module. It is not implemented here and must remain multi-tenant with strict isolation when built.
 - **Order operations** — `PaymentEvent` provides the audit trail a finance view would read.
-- **Email notifications** — a service can be added behind the lead/order repository calls; no schema change needed.
+- **Email notifications** — implemented behind the lead/order/newsletter flows with a `Notification` audit table. Provider credentials are still required.
+- **Newsletter campaigns** — subscribers are stored; bulk sending and unsubscribe links are not implemented.
 
 ---
 
@@ -273,8 +326,9 @@ The V1 scope deliberately stops at the public website. These seams exist so late
 
 ## 11. Known gaps
 
-- First database migration has not been applied (credentials not supplied).
-- No real payment provider, AI provider or email provider is contracted.
-- No committed browser automation suite. Responsive and interaction verification was performed with a temporary Chrome DevTools Protocol script across 17 pages and 8 widths; component-level behaviour is covered by Vitest.
+- The committed migration has not been applied to a live database (credentials not supplied).
+- No real payment provider, AI provider or email provider is contracted. PayPal-specific webhook verification is not implemented.
+- Rate limits and the fallback AI counter are per-process; multiple instances need a shared store.
 - Portfolio entries are labelled design concepts, not client work; testimonials remain empty until verified reviews and consent exist.
 - Sitemap uses build time as `lastModified` rather than per-page content dates.
+- Container definitions are provided but were not built in this environment because the Docker daemon was unavailable.
